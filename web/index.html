@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geo Buffer Debug Tool</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Geo Buffer Debug Tool</h1>
+        <p>Interactive debugging tool for the geo crate's buffer operations</p>
+      </header>
+      
+      <main class="container">
+        <div class="controls-panel">
+          <section class="input-section">
+            <h2>Input Geometry</h2>
+            <label for="wkt-input">WKT Input:</label>
+            <textarea id="wkt-input" rows="4" placeholder="Enter WKT geometry (e.g., POINT(0 0) or POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))"></textarea>
+            <div id="wkt-validation" class="validation-message"></div>
+          </section>
+
+          <section class="buffer-config">
+            <h2>Buffer Configuration</h2>
+            
+            <div class="form-group">
+              <label for="distance">Distance:</label>
+              <input type="number" id="distance" value="1.0" step="0.1" />
+            </div>
+
+            <div class="form-group">
+              <label for="line-cap">Line Cap:</label>
+              <select id="line-cap">
+                <option value="round">Round</option>
+                <option value="square">Square</option>
+                <option value="butt">Butt</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="line-join">Line Join:</label>
+              <select id="line-join">
+                <option value="round">Round</option>
+                <option value="miter">Miter</option>
+                <option value="bevel">Bevel</option>
+              </select>
+            </div>
+
+            <div class="form-group miter-limit-group" style="display: none;">
+              <label for="miter-limit">Miter Limit:</label>
+              <input type="number" id="miter-limit" value="1.0" step="0.1" min="0.1" />
+            </div>
+
+            <button id="apply-buffer" type="button">Apply Buffer</button>
+          </section>
+
+          <section class="output-section">
+            <h2>Output</h2>
+            <div id="buffer-result">
+              <textarea id="result-wkt" rows="6" readonly placeholder="Buffered geometry WKT will appear here"></textarea>
+            </div>
+            <div id="error-message" class="error-message" style="display: none;"></div>
+          </section>
+        </div>
+
+        <div class="map-panel">
+          <div id="map"></div>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
