@@ -2,6 +2,7 @@ use wasm_bindgen::prelude::*;
 use geo::{Buffer, Geometry};
 use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
 use geojson::{GeoJson};
+use wkt::{ToWkt, TryFromWkt};
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -141,4 +142,26 @@ pub fn get_geometry_info(geojson_input: &str) -> Result<String> {
     };
 
     Ok(format!("type: {}", info))
+}
+
+#[wasm_bindgen]
+pub fn wkt_to_geojson(wkt_input: &str) -> Result<String> {
+    let geometry: Geometry<f64> = Geometry::try_from_wkt_str(wkt_input)
+        .map_err(|e| format!("Invalid WKT: {}", e))?;
+    
+    let geojson = GeoJson::try_from(&geometry)
+        .map_err(|e| format!("Cannot convert to GeoJSON: {}", e))?;
+    
+    Ok(geojson.to_string())
+}
+
+#[wasm_bindgen]
+pub fn geojson_to_wkt(geojson_input: &str) -> Result<String> {
+    let geojson: GeoJson = geojson_input.parse()
+        .map_err(|e| format!("Invalid GeoJSON: {}", e))?;
+    
+    let geometry: Geometry<f64> = geojson.try_into()
+        .map_err(|e| format!("Cannot convert GeoJSON to geometry: {}", e))?;
+    
+    Ok(geometry.wkt_string())
 }

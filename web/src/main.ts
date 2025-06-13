@@ -1,6 +1,6 @@
 import './style.css'
 import * as L from 'leaflet'
-import init, { buffer_geometry, validate_geojson, get_geometry_info } from '../pkg/geo_buffer_wasm.js'
+import init, { buffer_geometry, validate_geojson, get_geometry_info, wkt_to_geojson, geojson_to_wkt } from '../pkg/geo_buffer_wasm.js'
 
 interface BufferConfig {
   distance: number
@@ -15,6 +15,7 @@ interface BufferResult {
 }
 
 type DrawingTool = 'none' | 'point' | 'line' | 'polygon'
+type InputFormat = 'geojson' | 'wkt'
 
 class GeoBufferDebugger {
   private map!: L.Map
@@ -27,12 +28,15 @@ class GeoBufferDebugger {
   private drawnFeatures: any[] = []
   private tempLayer: L.LayerGroup | null = null
   private tempMarkers: L.CircleMarker[] = []
+  private currentFormat: InputFormat = 'geojson'
+  private isConverting = false
 
   constructor() {
     this.initializeWasm()
     this.initializeMap()
     this.setupEventListeners()
     this.setupDrawingTools()
+    this.setupFormatToggle()
     this.loadExistingGeoJSON()
   }
 
@@ -466,7 +470,10 @@ class GeoBufferDebugger {
       geojsonInput.value = JSON.stringify(featureCollection, null, 2)
     }
     
-    this.validateGeojsonInput(geojsonInput.value)
+    // Update WKT field if we're in WKT mode or need to keep it in sync
+    this.convertToWkt(geojsonInput.value)
+    
+    this.validateCurrentInput()
     this.applyBufferIfReady()
   }
 
@@ -476,7 +483,12 @@ class GeoBufferDebugger {
     this.currentPolygonCoords = []
     this.clearTempDrawing()
     this.setDrawingTool('none')
-    this.updateGeoJSONInput()
+    
+    // Clear both input fields
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+    geojsonInput.value = ''
+    wktInput.value = ''
     
     // Clear the map layers
     this.clearOriginalGeometry()
@@ -485,12 +497,14 @@ class GeoBufferDebugger {
       this.bufferedLayer = null
     }
     
-    // Clear the result textarea
-    const resultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
-    resultTextarea.value = ''
+    // Clear both result textareas
+    const geojsonResultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    const wktResultTextarea = document.getElementById('result-wkt') as HTMLTextAreaElement
+    geojsonResultTextarea.value = ''
+    wktResultTextarea.value = ''
     
     // Clear validation message
-    const validationDiv = document.getElementById('geojson-validation')!
+    const validationDiv = document.getElementById('format-validation')!
     validationDiv.style.display = 'none'
   }
 
@@ -627,18 +641,19 @@ class GeoBufferDebugger {
       return
     }
 
-    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
     const distanceInput = document.getElementById('distance') as HTMLInputElement
     const lineCapSelect = document.getElementById('line-cap') as HTMLSelectElement
     const lineJoinSelect = document.getElementById('line-join') as HTMLSelectElement
     const miterLimitInput = document.getElementById('miter-limit') as HTMLInputElement
 
     // Only apply buffer if we have valid input
-    const validationDiv = document.getElementById('geojson-validation')!
+    const validationDiv = document.getElementById('format-validation')!
     if (!validationDiv.className.includes('valid')) {
       return
     }
 
+    // Always use GeoJSON for buffer operations (convert from WKT if needed)
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
     const config: BufferConfig = {
       distance: parseFloat(distanceInput.value),
       line_cap: lineCapSelect.value,
@@ -650,7 +665,7 @@ class GeoBufferDebugger {
   }
 
   private validateGeojsonInput(geojson: string) {
-    const validationDiv = document.getElementById('geojson-validation')!
+    const validationDiv = document.getElementById('format-validation')!
     
     if (!geojson.trim()) {
       validationDiv.style.display = 'none'
@@ -697,7 +712,6 @@ class GeoBufferDebugger {
   }
 
   private displayOriginalGeometry(geojson: string) {
-    console.log('Displaying original geometry:', geojson);
     try {
       const geojsonObj = JSON.parse(geojson)
       
@@ -749,12 +763,25 @@ class GeoBufferDebugger {
   }
 
   private displayResult(geojson: string) {
-    const resultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    const geojsonResultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    const wktResultTextarea = document.getElementById('result-wkt') as HTMLTextAreaElement
+    
+    // Always update GeoJSON output
     try {
       const formatted = JSON.stringify(JSON.parse(geojson), null, 2)
-      resultTextarea.value = formatted
+      geojsonResultTextarea.value = formatted
     } catch {
-      resultTextarea.value = geojson
+      geojsonResultTextarea.value = geojson
+    }
+    
+    // Convert to WKT for WKT output
+    if (this.wasmReady) {
+      try {
+        const wktResult = geojson_to_wkt(geojson.trim())
+        wktResultTextarea.value = wktResult
+      } catch (error) {
+        wktResultTextarea.value = ''
+      }
     }
   }
 
@@ -783,6 +810,183 @@ class GeoBufferDebugger {
     if (layers.length > 0) {
       const group = L.featureGroup(layers)
       this.map.fitBounds(group.getBounds(), { padding: [20, 20] })
+    }
+  }
+
+  private setupFormatToggle() {
+    const formatRadios = document.querySelectorAll('input[name="format"]') as NodeListOf<HTMLInputElement>
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+
+    formatRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          const newFormat = radio.value as InputFormat
+          this.switchFormat(newFormat)
+        }
+      })
+    })
+
+    // Set up input event listeners for both formats
+    geojsonInput.addEventListener('input', () => {
+      if (this.currentFormat === 'geojson' && !this.isConverting) {
+        this.handleFormatInput('geojson', geojsonInput.value)
+      }
+    })
+
+    wktInput.addEventListener('input', () => {
+      if (this.currentFormat === 'wkt' && !this.isConverting) {
+        this.handleFormatInput('wkt', wktInput.value)
+      }
+    })
+  }
+
+  private switchFormat(newFormat: InputFormat) {
+    const geojsonInputContainer = document.getElementById('geojson-container') as HTMLElement
+    const wktInputContainer = document.getElementById('wkt-container') as HTMLElement
+    const geojsonOutputContainer = document.getElementById('geojson-output-container') as HTMLElement
+    const wktOutputContainer = document.getElementById('wkt-output-container') as HTMLElement
+
+    this.currentFormat = newFormat
+
+    if (newFormat === 'geojson') {
+      // Show GeoJSON input/output, hide WKT
+      geojsonInputContainer.style.display = 'block'
+      wktInputContainer.style.display = 'none'
+      geojsonOutputContainer.style.display = 'block'
+      wktOutputContainer.style.display = 'none'
+    } else {
+      // Show WKT input/output, hide GeoJSON
+      geojsonInputContainer.style.display = 'none'
+      wktInputContainer.style.display = 'block'
+      geojsonOutputContainer.style.display = 'none'
+      wktOutputContainer.style.display = 'block'
+    }
+
+    // Convert current content when switching formats
+    this.convertBetweenFormats()
+    this.convertCurrentOutput()
+    this.validateCurrentInput()
+  }
+
+  private handleFormatInput(format: InputFormat, value: string) {
+    if (format === 'geojson') {
+      this.convertToWkt(value)
+    } else {
+      this.convertToGeoJson(value)
+    }
+    this.validateCurrentInput()
+    this.applyBufferIfReady()
+  }
+
+  private convertBetweenFormats() {
+    if (!this.wasmReady) return
+
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+
+    if (this.currentFormat === 'wkt' && geojsonInput.value.trim()) {
+      this.convertToWkt(geojsonInput.value)
+    } else if (this.currentFormat === 'geojson' && wktInput.value.trim()) {
+      this.convertToGeoJson(wktInput.value)
+    }
+  }
+
+  private convertToWkt(geojsonValue: string) {
+    if (!this.wasmReady || !geojsonValue.trim()) {
+      this.setWktInput('')
+      return
+    }
+
+    try {
+      this.isConverting = true
+      const wktResult = geojson_to_wkt(geojsonValue.trim())
+      this.setWktInput(wktResult)
+    } catch (error) {
+      this.setWktInput('')
+    } finally {
+      this.isConverting = false
+    }
+  }
+
+  private convertToGeoJson(wktValue: string) {
+    if (!this.wasmReady || !wktValue.trim()) {
+      this.setGeoJsonInput('')
+      return
+    }
+
+    try {
+      this.isConverting = true
+      const geojsonResult = wkt_to_geojson(wktValue.trim())
+      this.setGeoJsonInput(geojsonResult)
+    } catch (error) {
+      this.setGeoJsonInput('')
+    } finally {
+      this.isConverting = false
+    }
+  }
+
+  private setGeoJsonInput(value: string) {
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    geojsonInput.value = value
+  }
+
+  private setWktInput(value: string) {
+    const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+    wktInput.value = value
+  }
+
+  private validateCurrentInput() {
+    const currentInput = this.getCurrentInputValue()
+    if (this.currentFormat === 'geojson') {
+      this.validateGeojsonInput(currentInput)
+    } else {
+      this.validateWktInput(currentInput)
+    }
+  }
+
+  private getCurrentInputValue(): string {
+    if (this.currentFormat === 'geojson') {
+      const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+      return geojsonInput.value
+    } else {
+      const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+      return wktInput.value
+    }
+  }
+
+  private validateWktInput(wkt: string) {
+    const validationDiv = document.getElementById('format-validation')!
+    
+    if (!wkt.trim()) {
+      validationDiv.style.display = 'none'
+      return
+    }
+
+    if (!this.wasmReady) {
+      validationDiv.textContent = 'WASM module loading...'
+      validationDiv.className = 'validation-message invalid'
+      return
+    }
+
+    try {
+      const geojsonResult = wkt_to_geojson(wkt.trim())
+      const info = get_geometry_info(geojsonResult)
+      validationDiv.textContent = `✓ Valid WKT - ${info}`
+      validationDiv.className = 'validation-message valid'
+      this.displayOriginalGeometry(geojsonResult)
+    } catch (error) {
+      validationDiv.textContent = `✗ ${error}`
+      validationDiv.className = 'validation-message invalid'
+      this.clearOriginalGeometry()
+    }
+  }
+
+  private convertCurrentOutput() {
+    // Get current GeoJSON output and ensure WKT output is also populated
+    const geojsonResultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    if (geojsonResultTextarea.value.trim()) {
+      this.displayResult(geojsonResultTextarea.value)
     }
   }
 

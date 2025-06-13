@@ -28,9 +28,32 @@
               </div>
               <div id="drawing-status" class="drawing-status"></div>
             </div>
-            <label for="geojson-input">GeoJSON Input:</label>
-            <textarea id="geojson-input" rows="6" placeholder='Enter GeoJSON geometry (e.g., {"type": "Point", "coordinates": [0, 0]})'></textarea>
-            <div id="geojson-validation" class="validation-message"></div>
+            
+            <div class="format-toggle">
+              <label>Input Format:</label>
+              <div class="radio-group">
+                <label class="radio-label">
+                  <input type="radio" name="format" value="geojson" checked>
+                  <span>GeoJSON</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" name="format" value="wkt">
+                  <span>WKT</span>
+                </label>
+              </div>
+            </div>
+            
+            <div id="geojson-container" class="input-container">
+              <label for="geojson-input">GeoJSON Input:</label>
+              <textarea id="geojson-input" rows="6" placeholder='Enter GeoJSON geometry (e.g., {"type": "Point", "coordinates": [0, 0]})'></textarea>
+            </div>
+            
+            <div id="wkt-container" class="input-container" style="display: none;">
+              <label for="wkt-input">WKT Input:</label>
+              <textarea id="wkt-input" rows="6" placeholder="Enter WKT geometry (e.g., POINT(0 0))"></textarea>
+            </div>
+            
+            <div id="format-validation" class="validation-message"></div>
           </section>
 
           <section class="buffer-config">
@@ -68,8 +91,13 @@
 
           <section class="output-section">
             <h2>Output</h2>
-            <div id="buffer-result">
+            <div id="geojson-output-container" class="output-container">
+              <label for="result-geojson">Buffered GeoJSON:</label>
               <textarea id="result-geojson" rows="8" readonly placeholder="Buffered geometry GeoJSON will appear here"></textarea>
+            </div>
+            <div id="wkt-output-container" class="output-container" style="display: none;">
+              <label for="result-wkt">Buffered WKT:</label>
+              <textarea id="result-wkt" rows="8" readonly placeholder="Buffered geometry WKT will appear here"></textarea>
             </div>
             <div id="error-message" class="error-message" style="display: none;"></div>
           </section>
