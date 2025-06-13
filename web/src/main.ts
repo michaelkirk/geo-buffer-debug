@@ -1,6 +1,6 @@
 import './style.css'
 import * as L from 'leaflet'
-import init, { buffer_geometry, validate_geojson, get_geometry_info, wkt_to_geojson, geojson_to_wkt } from '../pkg/geo_buffer_wasm.js'
+import init, { buffer_geometry_wkt, validate_geojson, get_geometry_info, wkt_to_geojson, geojson_to_wkt } from '../pkg/geo_buffer_wasm.js'
 
 interface BufferConfig {
   distance: number
@@ -515,6 +515,11 @@ class GeoBufferDebugger {
     // Clear validation message
     const validationDiv = document.getElementById('format-validation')!
     validationDiv.style.display = 'none'
+    
+    // Remove input parameter from URL
+    const url = new URL(window.location.href)
+    url.searchParams.delete('input')
+    window.history.replaceState({}, '', url.toString())
   }
 
 
@@ -638,16 +643,28 @@ class GeoBufferDebugger {
       return
     }
 
-    // Always use GeoJSON for buffer operations (convert from WKT if needed)
+    // Use WKT for buffer operations since it's more compact
     const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
-    const config: BufferConfig = {
-      distance: parseFloat(distanceInput.value),
-      line_cap: lineCapSelect.value,
-      line_join: lineJoinSelect.value,
-      miter_limit: lineJoinSelect.value === 'miter' ? parseFloat(miterLimitInput.value) : undefined
+    const geojsonValue = geojsonInput.value.trim()
+    
+    if (!geojsonValue) {
+      return // No geometry to buffer
     }
 
-    this.applyBuffer(geojsonInput.value, config)
+    // Convert to WKT for buffer operation
+    try {
+      const wktValue = geojson_to_wkt(geojsonValue)
+      const config: BufferConfig = {
+        distance: parseFloat(distanceInput.value),
+        line_cap: lineCapSelect.value,
+        line_join: lineJoinSelect.value,
+        miter_limit: lineJoinSelect.value === 'miter' ? parseFloat(miterLimitInput.value) : undefined
+      }
+
+      this.applyBuffer(wktValue, config)
+    } catch (error) {
+      this.showError(`Failed to convert geometry for buffering: ${error}`)
+    }
   }
 
   private validateGeojsonInput(geojson: string) {
@@ -677,10 +694,10 @@ class GeoBufferDebugger {
     }
   }
 
-  private applyBuffer(geojson: string, config: BufferConfig) {
+  private applyBuffer(wkt: string, config: BufferConfig) {
     try {
       const configJson = JSON.stringify(config)
-      const resultJson = buffer_geometry(geojson.trim(), configJson)
+      const resultJson = buffer_geometry_wkt(wkt.trim(), configJson)
       const result: BufferResult = JSON.parse(resultJson)
 
       if (result.error) {

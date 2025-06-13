@@ -1,5 +1,7 @@
 # Geo Buffer Debug Tool
 
+⚠️ This debug tool is largely AI generated slop, consumer beware.
+
 An interactive browser-based debugging tool for the geo crate's [new buffer trait implementation](https://github.com/georust/geo/tree/mkirk/geo-buffer). This tool allows you to:
 
 - Input geometries in WKT (Well-Known Text) format

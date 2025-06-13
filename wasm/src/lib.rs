@@ -37,7 +37,7 @@ pub fn init_panic_hook() {
 }
 
 #[wasm_bindgen]
-pub fn buffer_geometry(geojson_input: &str, config_json: &str) -> String {
+pub fn buffer_geometry_wkt(wkt_input: &str, config_json: &str) -> String {
     let config: BufferConfig = match serde_json::from_str(config_json) {
         Ok(config) => config,
         Err(e) => {
@@ -49,23 +49,12 @@ pub fn buffer_geometry(geojson_input: &str, config_json: &str) -> String {
         }
     };
 
-    let geojson: GeoJson = match geojson_input.parse() {
-        Ok(geojson) => geojson,
-        Err(e) => {
-            let result = BufferResult {
-                geojson: String::new(),
-                error: Some(format!("Invalid GeoJSON: {}", e)),
-            };
-            return serde_json::to_string(&result).unwrap();
-        }
-    };
-
-    let geometry: Geometry<f64> = match geojson.try_into() {
+    let geometry: Geometry<f64> = match Geometry::try_from_wkt_str(wkt_input) {
         Ok(geom) => geom,
         Err(e) => {
             let result = BufferResult {
                 geojson: String::new(),
-                error: Some(format!("Cannot convert GeoJSON to geometry: {}", e)),
+                error: Some(format!("Invalid WKT: {}", e)),
             };
             return serde_json::to_string(&result).unwrap();
         }
