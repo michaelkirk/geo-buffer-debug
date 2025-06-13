@@ -37,7 +37,8 @@ class GeoBufferDebugger {
     this.setupEventListeners()
     this.setupDrawingTools()
     this.setupFormatToggle()
-    this.loadExistingGeoJSON()
+    this.setupUrlSharing()
+    this.loadFromUrlOrDefault()
   }
 
   private async initializeWasm() {
@@ -45,10 +46,18 @@ class GeoBufferDebugger {
       await init()
       this.wasmReady = true
       console.log('WASM module loaded successfully')
-      // Trigger validation once WASM is ready
+      // Check for URL parameters and load geometry once WASM is ready
+      const urlParams = new URLSearchParams(window.location.search)
+      const encodedInput = urlParams.get('input')
+      
+      if (encodedInput) {
+        this.loadFromUrl(encodedInput)
+      }
+      
+      // Trigger validation and buffer for current input
       const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
       if (geojsonInput && geojsonInput.value) {
-        this.validateGeojsonInput(geojsonInput.value)
+        this.validateCurrentInput()
         this.applyBufferIfReady()
         this.fitMapToFeatures()
       }
@@ -508,29 +517,6 @@ class GeoBufferDebugger {
     validationDiv.style.display = 'none'
   }
 
-  private loadExistingGeoJSON() {
-    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
-    if (geojsonInput.value.trim()) {
-      try {
-        const existingData = JSON.parse(geojsonInput.value)
-        if (existingData.type === 'FeatureCollection') {
-          this.drawnFeatures = [...existingData.features]
-        } else if (existingData.type === 'Feature') {
-          this.drawnFeatures = [existingData]
-        } else {
-          // It's a geometry, wrap it in a feature
-          this.drawnFeatures = [{
-            type: 'Feature',
-            properties: {},
-            geometry: existingData
-          }]
-        }
-      } catch (error) {
-        console.log('Could not parse existing GeoJSON, starting fresh')
-        this.drawnFeatures = []
-      }
-    }
-  }
 
   private initTempLayer() {
     if (!this.tempLayer) {
@@ -987,6 +973,333 @@ class GeoBufferDebugger {
     const geojsonResultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
     if (geojsonResultTextarea.value.trim()) {
       this.displayResult(geojsonResultTextarea.value)
+    }
+  }
+
+  private setupUrlSharing() {
+    const copyUrlGeojsonBtn = document.getElementById('copy-url-geojson') as HTMLButtonElement
+    const copyUrlWktBtn = document.getElementById('copy-url-wkt') as HTMLButtonElement
+
+    copyUrlGeojsonBtn.addEventListener('click', () => this.copyShareableUrl())
+    copyUrlWktBtn.addEventListener('click', () => this.copyShareableUrl())
+  }
+
+  private copyShareableUrl() {
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    const geojsonValue = geojsonInput.value.trim()
+
+    if (!geojsonValue) {
+      alert('No geometry to share. Please add some input geometry first.')
+      return
+    }
+
+    if (!this.wasmReady) {
+      alert('WASM module not ready yet. Please wait a moment and try again.')
+      return
+    }
+
+    try {
+      // Convert GeoJSON to WKT for more compact encoding
+      const wktValue = geojson_to_wkt(geojsonValue)
+      
+      // Encode WKT as base64 (much smaller than GeoJSON)
+      const encoded = btoa(encodeURIComponent(wktValue))
+      
+      // Create URL with encoded parameter
+      const url = new URL(window.location.href)
+      url.searchParams.set('input', encoded)
+      
+      const urlString = url.toString()
+      const urlSize = new Blob([urlString]).size
+      
+      // Check if URL is too large (32KB limit)
+      if (urlSize > 32 * 1024) {
+        const sizeKB = Math.round(urlSize / 1024 * 10) / 10
+        const confirmed = confirm(
+          `⚠️ Warning: This URL is ${sizeKB}KB, which exceeds the recommended 32KB limit.\n\n` +
+          `Large URLs may not work properly in some browsers or when shared via certain platforms.\n\n` +
+          `Do you want to copy it anyway?`
+        )
+        
+        if (!confirmed) {
+          return
+        }
+      }
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(urlString).then(() => {
+        // Temporarily change button text to show success
+        const btn = this.currentFormat === 'geojson' 
+          ? document.getElementById('copy-url-geojson') as HTMLButtonElement
+          : document.getElementById('copy-url-wkt') as HTMLButtonElement
+        
+        const originalText = btn.textContent
+        btn.textContent = '✓ Copied!'
+        btn.style.background = '#218838'
+        
+        setTimeout(() => {
+          btn.textContent = originalText
+          btn.style.background = ''
+        }, 2000)
+      }).catch(() => {
+        alert('Failed to copy URL to clipboard')
+      })
+    } catch (error) {
+      alert('Failed to create shareable URL: ' + error)
+    }
+  }
+
+  private loadFromUrlOrDefault() {
+    // This is only called when WASM isn't ready yet
+    // The actual URL loading is handled in initializeWasm once WASM is ready
+    const urlParams = new URLSearchParams(window.location.search)
+    const encodedInput = urlParams.get('input')
+
+    if (!encodedInput) {
+      // Only load default if there's no URL parameter
+      this.loadDefaultGeoJSON()
+    }
+    // If there is a URL parameter, wait for WASM to be ready
+  }
+
+  private loadFromUrl(encodedInput: string) {
+    if (!this.wasmReady) {
+      // If WASM isn't ready yet, try again after a short delay
+      setTimeout(() => this.loadFromUrl(encodedInput), 100)
+      return
+    }
+
+    try {
+      // Decode from base64 - this should be WKT now
+      const decodedWkt = decodeURIComponent(atob(encodedInput))
+      
+      // Convert WKT to GeoJSON
+      const geojsonValue = wkt_to_geojson(decodedWkt)
+      
+      // Set both input fields
+      const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+      const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+      geojsonInput.value = geojsonValue
+      wktInput.value = decodedWkt
+      
+      // Parse and load the features
+      this.parseAndLoadFeatures(geojsonValue)
+      
+      console.log('Loaded geometry from URL (WKT format)')
+    } catch (error) {
+      console.error('Failed to load geometry from URL:', error)
+      // Fall back to default if URL parameter is invalid
+      this.loadDefaultGeoJSON()
+    }
+  }
+
+  private loadDefaultGeoJSON() {
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    
+    // Set initial example - features around Belize (keeping the existing default)
+    geojsonInput.value = JSON.stringify({
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "coordinates": [
+              [
+                [
+                  -89.22203731226631,
+                  15.919478319916351
+                ],
+                [
+                  -88.92244912542684,
+                  15.87814538651945
+                ],
+                [
+                  -88.83254963278378,
+                  15.981038154643826
+                ],
+                [
+                  -88.71695384308812,
+                  16.190830410784827
+                ],
+                [
+                  -88.54569623071036,
+                  16.231925523028025
+                ],
+                [
+                  -88.37871701285464,
+                  16.441466716930734
+                ],
+                [
+                  -88.29310624869152,
+                  16.728728081789896
+                ],
+                [
+                  -88.14751836436047,
+                  16.990943383827826
+                ],
+                [
+                  -88.28882234190722,
+                  17.101462723487074
+                ],
+                [
+                  -88.23742690543888,
+                  17.387698825293484
+                ],
+                [
+                  -87.94200213538677,
+                  17.889565133501492
+                ],
+                [
+                  -87.81783811559248,
+                  18.182686154519615
+                ],
+                [
+                  -88.02335098097838,
+                  18.170482569667286
+                ],
+                [
+                  -88.03191402082044,
+                  18.41439193731827
+                ],
+                [
+                  -88.23743087515625,
+                  18.42656011271997
+                ],
+                [
+                  -88.24599077717,
+                  18.471251062791865
+                ],
+                [
+                  -88.50288204264858,
+                  18.48743923291582
+                ],
+                [
+                  -88.85819613263257,
+                  17.901656852502285
+                ],
+                [
+                  -89.01227978174298,
+                  18.01562641821063
+                ],
+                [
+                  -89.16213371387813,
+                  17.96274503980726
+                ],
+                [
+                  -89.22203731226631,
+                  15.919478319916351
+                ]
+              ]
+            ],
+            "type": "Polygon"
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "coordinates": [
+              [
+                -91.436051662065,
+                17.24850177813404
+              ],
+              [
+                -91.32389161242773,
+                17.1466377010765
+              ],
+              [
+                -91.24254068569282,
+                17.175232469529405
+              ],
+              [
+                -91.2467623550109,
+                17.093343084631144
+              ],
+              [
+                -91.16542301650593,
+                17.01147589087587
+              ],
+              [
+                -91.12262683478133,
+                16.96645435400508
+              ],
+              [
+                -91.04561720279386,
+                16.884608080324256
+              ],
+              [
+                -90.99428573425823,
+                16.876467915287023
+              ],
+              [
+                -90.95149754389833,
+                16.913363605703395
+              ],
+              [
+                -90.9386631295941,
+                16.864228563635393
+              ],
+              [
+                -90.8873003186585,
+                16.82737179414731
+              ],
+              [
+                -90.78027737044178,
+                16.778190771442667
+              ],
+              [
+                -90.6903802654897,
+                16.659282453066453
+              ],
+              [
+                -90.64329189600558,
+                16.597759297723485
+              ],
+              [
+                -90.63044763048603,
+                16.50748908670593
+              ]
+            ],
+            "type": "LineString"
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "coordinates": [
+              -90.28752310908116,
+              16.66557517210579
+            ],
+            "type": "Point"
+          }
+        }
+      ]
+    }, null, 2)
+
+    this.parseAndLoadFeatures(geojsonInput.value)
+    this.validateGeojsonInput(geojsonInput.value)
+  }
+
+  private parseAndLoadFeatures(geojsonValue: string) {
+    try {
+      const existingData = JSON.parse(geojsonValue)
+      if (existingData.type === 'FeatureCollection') {
+        this.drawnFeatures = [...existingData.features]
+      } else if (existingData.type === 'Feature') {
+        this.drawnFeatures = [existingData]
+      } else {
+        // It's a geometry, wrap it in a feature
+        this.drawnFeatures = [{
+          type: 'Feature',
+          properties: {},
+          geometry: existingData
+        }]
+      }
+    } catch (error) {
+      console.log('Could not parse GeoJSON, starting fresh')
+      this.drawnFeatures = []
     }
   }
 

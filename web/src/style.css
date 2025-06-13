@@ -199,11 +199,39 @@ button:disabled {
   margin-bottom: 1rem;
 }
 
-.input-container label {
-  display: block;
+.input-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 0.25rem;
+}
+
+.input-container label {
+  margin: 0;
   font-weight: 500;
   color: #34495e;
+}
+
+.copy-url-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  width: auto;
+  transition: background-color 0.2s;
+}
+
+.copy-url-btn:hover {
+  background: #218838;
+}
+
+.copy-url-btn:active {
+  background: #1e7e34;
+  transform: scale(0.98);
 }
 
 .output-container {

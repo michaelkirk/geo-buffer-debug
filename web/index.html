@@ -44,12 +44,18 @@
             </div>
             
             <div id="geojson-container" class="input-container">
-              <label for="geojson-input">GeoJSON Input:</label>
+              <div class="input-header">
+                <label for="geojson-input">GeoJSON Input:</label>
+                <button id="copy-url-geojson" class="copy-url-btn" type="button" title="Copy shareable URL">📋 Copy URL</button>
+              </div>
               <textarea id="geojson-input" rows="6" placeholder='Enter GeoJSON geometry (e.g., {"type": "Point", "coordinates": [0, 0]})'></textarea>
             </div>
             
             <div id="wkt-container" class="input-container" style="display: none;">
-              <label for="wkt-input">WKT Input:</label>
+              <div class="input-header">
+                <label for="wkt-input">WKT Input:</label>
+                <button id="copy-url-wkt" class="copy-url-btn" type="button" title="Copy shareable URL">📋 Copy URL</button>
+              </div>
               <textarea id="wkt-input" rows="6" placeholder="Enter WKT geometry (e.g., POINT(0 0))"></textarea>
             </div>
             
