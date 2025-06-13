@@ -33,6 +33,7 @@ class GeoBufferDebugger {
     this.initializeMap()
     this.setupEventListeners()
     this.setupDrawingTools()
+    this.loadExistingGeoJSON()
   }
 
   private async initializeWasm() {
@@ -45,6 +46,7 @@ class GeoBufferDebugger {
       if (geojsonInput && geojsonInput.value) {
         this.validateGeojsonInput(geojsonInput.value)
         this.applyBufferIfReady()
+        this.fitMapToFeatures()
       }
     } catch (error) {
       console.error('Failed to load WASM module:', error)
@@ -286,6 +288,10 @@ class GeoBufferDebugger {
 
     // Add map click handler for drawing
     this.map.on('click', (e: L.LeafletMouseEvent) => this.handleMapClick(e))
+
+    // Add fit bounds button handler
+    const fitBoundsBtn = document.getElementById('fit-bounds-btn') as HTMLButtonElement
+    fitBoundsBtn.addEventListener('click', () => this.fitMapToFeatures())
   }
 
   private setDrawingTool(tool: DrawingTool) {
@@ -473,6 +479,45 @@ class GeoBufferDebugger {
     this.clearTempDrawing()
     this.setDrawingTool('none')
     this.updateGeoJSONInput()
+    
+    // Clear the map layers
+    this.clearOriginalGeometry()
+    if (this.bufferedLayer) {
+      this.map.removeLayer(this.bufferedLayer)
+      this.bufferedLayer = null
+    }
+    
+    // Clear the result textarea
+    const resultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    resultTextarea.value = ''
+    
+    // Clear validation message
+    const validationDiv = document.getElementById('geojson-validation')!
+    validationDiv.style.display = 'none'
+  }
+
+  private loadExistingGeoJSON() {
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    if (geojsonInput.value.trim()) {
+      try {
+        const existingData = JSON.parse(geojsonInput.value)
+        if (existingData.type === 'FeatureCollection') {
+          this.drawnFeatures = [...existingData.features]
+        } else if (existingData.type === 'Feature') {
+          this.drawnFeatures = [existingData]
+        } else {
+          // It's a geometry, wrap it in a feature
+          this.drawnFeatures = [{
+            type: 'Feature',
+            properties: {},
+            geometry: existingData
+          }]
+        }
+      } catch (error) {
+        console.log('Could not parse existing GeoJSON, starting fresh')
+        this.drawnFeatures = []
+      }
+    }
   }
 
   private initTempLayer() {
@@ -727,6 +772,23 @@ class GeoBufferDebugger {
   private hideError() {
     const errorDiv = document.getElementById('error-message')!
     errorDiv.style.display = 'none'
+  }
+
+  private fitMapToFeatures() {
+    const layers = []
+    
+    if (this.originalLayer) {
+      layers.push(this.originalLayer)
+    }
+    
+    if (this.bufferedLayer) {
+      layers.push(this.bufferedLayer)
+    }
+    
+    if (layers.length > 0) {
+      const group = L.featureGroup(layers)
+      this.map.fitBounds(group.getBounds(), { padding: [20, 20] })
+    }
   }
 
 }
