@@ -104,6 +104,59 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.drawing-tools {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+}
+
+.drawing-tools label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+  color: #495057;
+}
+
+.tool-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.tool-btn {
+  width: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.tool-btn.active {
+  background: #28a745;
+}
+
+.tool-btn.active:hover {
+  background: #218838;
+}
+
+.clear-btn {
+  background: #dc3545;
+  grid-column: span 2;
+}
+
+.clear-btn:hover {
+  background: #c82333;
+}
+
+.drawing-status {
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-style: italic;
+  min-height: 1.2em;
+}
+
 .validation-message {
   margin-top: 0.5rem;
   font-size: 0.85rem;

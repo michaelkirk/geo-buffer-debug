@@ -18,6 +18,16 @@
         <div class="controls-panel">
           <section class="input-section">
             <h2>Input Geometry</h2>
+            <div class="drawing-tools">
+              <label>Drawing Tools:</label>
+              <div class="tool-buttons">
+                <button id="tool-point" type="button" class="tool-btn">Add Point</button>
+                <button id="tool-line" type="button" class="tool-btn">Draw Line</button>
+                <button id="tool-polygon" type="button" class="tool-btn">Draw Polygon</button>
+                <button id="tool-clear" type="button" class="tool-btn clear-btn">Clear All</button>
+              </div>
+              <div id="drawing-status" class="drawing-status"></div>
+            </div>
             <label for="geojson-input">GeoJSON Input:</label>
             <textarea id="geojson-input" rows="6" placeholder='Enter GeoJSON geometry (e.g., {"type": "Point", "coordinates": [0, 0]})'></textarea>
             <div id="geojson-validation" class="validation-message"></div>

@@ -14,16 +14,25 @@ interface BufferResult {
   error?: string
 }
 
+type DrawingTool = 'none' | 'point' | 'line' | 'polygon'
+
 class GeoBufferDebugger {
   private map: L.Map
   private originalLayer: L.GeoJSON | null = null
   private bufferedLayer: L.GeoJSON | null = null
   private wasmReady = false
+  private currentTool: DrawingTool = 'none'
+  private currentLineCoords: number[][] = []
+  private currentPolygonCoords: number[][] = []
+  private drawnFeatures: any[] = []
+  private tempLayer: L.LayerGroup | null = null
+  private tempMarkers: L.CircleMarker[] = []
 
   constructor() {
     this.initializeWasm()
     this.initializeMap()
     this.setupEventListeners()
+    this.setupDrawingTools()
   }
 
   private async initializeWasm() {
@@ -261,6 +270,313 @@ class GeoBufferDebugger {
   ]
     }, null, 2)
     this.validateGeojsonInput(geojsonInput.value)
+  }
+
+  private setupDrawingTools() {
+    const pointBtn = document.getElementById('tool-point') as HTMLButtonElement
+    const lineBtn = document.getElementById('tool-line') as HTMLButtonElement
+    const polygonBtn = document.getElementById('tool-polygon') as HTMLButtonElement
+    const clearBtn = document.getElementById('tool-clear') as HTMLButtonElement
+    const statusDiv = document.getElementById('drawing-status') as HTMLDivElement
+
+    pointBtn.addEventListener('click', () => this.setDrawingTool('point'))
+    lineBtn.addEventListener('click', () => this.setDrawingTool('line'))
+    polygonBtn.addEventListener('click', () => this.setDrawingTool('polygon'))
+    clearBtn.addEventListener('click', () => this.clearDrawnFeatures())
+
+    // Add map click handler for drawing
+    this.map.on('click', (e: L.LeafletMouseEvent) => this.handleMapClick(e))
+  }
+
+  private setDrawingTool(tool: DrawingTool) {
+    // Reset any in-progress drawing
+    this.clearTempDrawing()
+    this.currentLineCoords = []
+    this.currentPolygonCoords = []
+    this.currentTool = tool
+    this.updateDrawingStatus()
+    this.updateToolButtons()
+  }
+
+  private updateToolButtons() {
+    const buttons = document.querySelectorAll('.tool-btn:not(.clear-btn)')
+    buttons.forEach(btn => btn.classList.remove('active'))
+    
+    if (this.currentTool !== 'none') {
+      const activeBtn = document.getElementById(`tool-${this.currentTool}`)
+      if (activeBtn) activeBtn.classList.add('active')
+    }
+  }
+
+  private updateDrawingStatus() {
+    const statusDiv = document.getElementById('drawing-status') as HTMLDivElement
+    
+    switch (this.currentTool) {
+      case 'point':
+        statusDiv.textContent = 'Click on the map to add a point'
+        break
+      case 'line':
+        if (this.currentLineCoords.length === 0) {
+          statusDiv.textContent = 'Click to start drawing a line. Click last point again to finish.'
+        } else {
+          statusDiv.textContent = `Line: ${this.currentLineCoords.length} points. Click last point again to finish.`
+        }
+        break
+      case 'polygon':
+        if (this.currentPolygonCoords.length === 0) {
+          statusDiv.textContent = 'Click to start drawing a polygon. Click first point again to close.'
+        } else {
+          statusDiv.textContent = `Polygon: ${this.currentPolygonCoords.length} points. Click first point again to close.`
+        }
+        break
+      default:
+        statusDiv.textContent = 'Select a drawing tool to start'
+    }
+  }
+
+  private handleMapClick(e: L.LeafletMouseEvent) {
+    if (this.currentTool === 'none') return
+
+    const { lat, lng } = e.latlng
+    const coords = [lng, lat] // GeoJSON uses [lng, lat]
+
+    switch (this.currentTool) {
+      case 'point':
+        this.addPoint(coords)
+        break
+      case 'line':
+        this.addLinePoint(coords)
+        break
+      case 'polygon':
+        this.addPolygonPoint(coords)
+        break
+    }
+  }
+
+  private addPoint(coords: number[]) {
+    const feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Point',
+        coordinates: coords
+      }
+    }
+    
+    this.drawnFeatures.push(feature)
+    this.updateGeoJSONInput()
+    this.setDrawingTool('none')
+  }
+
+  private addLinePoint(coords: number[]) {
+    // Check if clicking on the last point to finish
+    if (this.currentLineCoords.length > 0) {
+      const lastPoint = this.currentLineCoords[this.currentLineCoords.length - 1]
+      const distance = Math.sqrt(
+        Math.pow(coords[0] - lastPoint[0], 2) + Math.pow(coords[1] - lastPoint[1], 2)
+      )
+      
+      // If clicking very close to last point (within ~100m at zoom level), finish the line
+      if (distance < 0.001) {
+        if (this.currentLineCoords.length >= 2) {
+          this.finishLine()
+        }
+        return
+      }
+    }
+
+    this.currentLineCoords.push(coords)
+    this.updateTempLineDrawing()
+    this.updateDrawingStatus()
+  }
+
+  private addPolygonPoint(coords: number[]) {
+    // Check if clicking on the first point to close polygon
+    if (this.currentPolygonCoords.length >= 3) {
+      const firstPoint = this.currentPolygonCoords[0]
+      const distance = Math.sqrt(
+        Math.pow(coords[0] - firstPoint[0], 2) + Math.pow(coords[1] - firstPoint[1], 2)
+      )
+      
+      // If clicking very close to first point (within ~100m at zoom level), close the polygon
+      if (distance < 0.001) {
+        this.finishPolygon()
+        return
+      }
+    }
+
+    this.currentPolygonCoords.push(coords)
+    this.updateTempPolygonDrawing()
+    this.updateDrawingStatus()
+  }
+
+  private finishLine() {
+    const feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'LineString',
+        coordinates: [...this.currentLineCoords]
+      }
+    }
+    
+    this.drawnFeatures.push(feature)
+    this.clearTempDrawing()
+    this.currentLineCoords = []
+    this.updateGeoJSONInput()
+    this.setDrawingTool('none')
+  }
+
+  private finishPolygon() {
+    // Close the polygon by adding the first point at the end
+    const closedCoords = [...this.currentPolygonCoords, this.currentPolygonCoords[0]]
+    
+    const feature = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [closedCoords]
+      }
+    }
+    
+    this.drawnFeatures.push(feature)
+    this.clearTempDrawing()
+    this.currentPolygonCoords = []
+    this.updateGeoJSONInput()
+    this.setDrawingTool('none')
+  }
+
+  private updateGeoJSONInput() {
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
+    
+    if (this.drawnFeatures.length === 0) {
+      geojsonInput.value = ''
+    } else if (this.drawnFeatures.length === 1) {
+      geojsonInput.value = JSON.stringify(this.drawnFeatures[0].geometry, null, 2)
+    } else {
+      const featureCollection = {
+        type: 'FeatureCollection',
+        features: this.drawnFeatures
+      }
+      geojsonInput.value = JSON.stringify(featureCollection, null, 2)
+    }
+    
+    this.validateGeojsonInput(geojsonInput.value)
+    this.applyBufferIfReady()
+  }
+
+  private clearDrawnFeatures() {
+    this.drawnFeatures = []
+    this.currentLineCoords = []
+    this.currentPolygonCoords = []
+    this.clearTempDrawing()
+    this.setDrawingTool('none')
+    this.updateGeoJSONInput()
+  }
+
+  private initTempLayer() {
+    if (!this.tempLayer) {
+      this.tempLayer = L.layerGroup().addTo(this.map)
+    }
+  }
+
+  private clearTempDrawing() {
+    if (this.tempLayer) {
+      this.tempLayer.clearLayers()
+    }
+    this.tempMarkers = []
+  }
+
+  private updateTempLineDrawing() {
+    this.initTempLayer()
+    this.clearTempDrawing()
+
+    if (this.currentLineCoords.length === 0) return
+
+    // Add markers for each point
+    this.currentLineCoords.forEach((coord, index) => {
+      const isLast = index === this.currentLineCoords.length - 1
+      const marker = L.circleMarker([coord[1], coord[0]], {
+        radius: isLast ? 8 : 5,
+        color: isLast ? '#ff6b6b' : '#4ecdc4',
+        fillColor: isLast ? '#ff6b6b' : '#4ecdc4',
+        fillOpacity: 0.8,
+        weight: 2
+      })
+      
+      if (isLast) {
+        marker.bindTooltip('Click here to finish line', { permanent: false })
+      }
+      
+      this.tempMarkers.push(marker)
+      this.tempLayer!.addLayer(marker)
+    })
+
+    // Draw the line if we have at least 2 points
+    if (this.currentLineCoords.length >= 2) {
+      const latLngs = this.currentLineCoords.map(coord => [coord[1], coord[0]] as [number, number])
+      const polyline = L.polyline(latLngs, {
+        color: '#4ecdc4',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '5, 5'
+      })
+      this.tempLayer!.addLayer(polyline)
+    }
+  }
+
+  private updateTempPolygonDrawing() {
+    this.initTempLayer()
+    this.clearTempDrawing()
+
+    if (this.currentPolygonCoords.length === 0) return
+
+    // Add markers for each point
+    this.currentPolygonCoords.forEach((coord, index) => {
+      const isFirst = index === 0
+      const marker = L.circleMarker([coord[1], coord[0]], {
+        radius: isFirst ? 8 : 5,
+        color: isFirst ? '#ff6b6b' : '#4ecdc4',
+        fillColor: isFirst ? '#ff6b6b' : '#4ecdc4',
+        fillOpacity: 0.8,
+        weight: 2
+      })
+      
+      if (isFirst && this.currentPolygonCoords.length >= 3) {
+        marker.bindTooltip('Click here to close polygon', { permanent: false })
+      }
+      
+      this.tempMarkers.push(marker)
+      this.tempLayer!.addLayer(marker)
+    })
+
+    // Draw the polygon outline if we have at least 2 points
+    if (this.currentPolygonCoords.length >= 2) {
+      const latLngs = this.currentPolygonCoords.map(coord => [coord[1], coord[0]] as [number, number])
+      
+      // If we have 3+ points, show a preview of the closed polygon
+      if (this.currentPolygonCoords.length >= 3) {
+        const closedLatLngs = [...latLngs, latLngs[0]]
+        const polygon = L.polygon(closedLatLngs, {
+          color: '#4ecdc4',
+          weight: 3,
+          opacity: 0.7,
+          fillOpacity: 0.1,
+          dashArray: '5, 5'
+        })
+        this.tempLayer!.addLayer(polygon)
+      } else {
+        // Just show a line for the first 2 points
+        const polyline = L.polyline(latLngs, {
+          color: '#4ecdc4',
+          weight: 3,
+          opacity: 0.7,
+          dashArray: '5, 5'
+        })
+        this.tempLayer!.addLayer(polyline)
+      }
+    }
   }
 
   private applyBufferIfReady() {
