@@ -9,12 +9,10 @@ crate-type = ["cdylib"]
 [dependencies]
 wasm-bindgen = "0.2.100"
 geo = "0.30.0"
-wkt = "0.14.0"
 geojson = "0.24.2"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 console_error_panic_hook = "0.1.7"
-anyhow = "1.0.98"
 
 [patch.crates-io]
 geo = { git = "https://github.com/georust/geo", branch = "mkirk/geo-buffer" }

@@ -17,7 +17,7 @@ interface BufferResult {
 type DrawingTool = 'none' | 'point' | 'line' | 'polygon'
 
 class GeoBufferDebugger {
-  private map: L.Map
+  private map!: L.Map
   private originalLayer: L.GeoJSON | null = null
   private bufferedLayer: L.GeoJSON | null = null
   private wasmReady = false
@@ -279,8 +279,6 @@ class GeoBufferDebugger {
     const lineBtn = document.getElementById('tool-line') as HTMLButtonElement
     const polygonBtn = document.getElementById('tool-polygon') as HTMLButtonElement
     const clearBtn = document.getElementById('tool-clear') as HTMLButtonElement
-    const statusDiv = document.getElementById('drawing-status') as HTMLDivElement
-
     pointBtn.addEventListener('click', () => this.setDrawingTool('point'))
     lineBtn.addEventListener('click', () => this.setDrawingTool('line'))
     polygonBtn.addEventListener('click', () => this.setDrawingTool('polygon'))
@@ -666,7 +664,7 @@ class GeoBufferDebugger {
     }
 
     try {
-      const result = validate_geojson(geojson.trim())
+      validate_geojson(geojson.trim())
       const info = get_geometry_info(geojson.trim())
       validationDiv.textContent = `✓ Valid GeoJSON - ${info}`
       validationDiv.className = 'validation-message valid'
@@ -737,9 +735,6 @@ class GeoBufferDebugger {
         }
       }).addTo(this.map)
 
-      // Fit bounds to show both geometries
-      const group = L.featureGroup([this.originalLayer!, this.bufferedLayer])
-      // this.map.fitBounds(group.getBounds())
     } catch (error) {
       console.error('Failed to display buffered geometry:', error)
     }
