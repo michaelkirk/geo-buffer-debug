@@ -1,6 +1,6 @@
 # Geo Buffer Debug Tool
 
-An interactive browser-based debugging tool for the geo crate's new buffer trait implementation. This tool allows you to:
+An interactive browser-based debugging tool for the geo crate's [new buffer trait implementation](https://github.com/georust/geo/tree/mkirk/geo-buffer). This tool allows you to:
 
 - Input geometries in WKT (Well-Known Text) format
 - Configure buffer parameters (distance, line caps, line joins)
