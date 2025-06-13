@@ -1,8 +1,14 @@
 use wasm_bindgen::prelude::*;
 use geo::{Buffer, Geometry};
 use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
-use wkt::{ToWkt, TryFromWkt};
+use geojson::{GeoJson};
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
+use std::str::FromStr;
+use anyhow::anyhow;
+
+pub type Error = String;
+pub type Result<T> = std::result::Result<T, Error>;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
@@ -31,7 +37,7 @@ pub struct BufferConfig {
 
 #[derive(Serialize, Deserialize)]
 pub struct BufferResult {
-    pub wkt: String,
+    pub geojson: String,
     pub error: Option<String>,
 }
 
@@ -41,24 +47,35 @@ pub fn init_panic_hook() {
 }
 
 #[wasm_bindgen]
-pub fn buffer_geometry(wkt_input: &str, config_json: &str) -> String {
+pub fn buffer_geometry(geojson_input: &str, config_json: &str) -> String {
     let config: BufferConfig = match serde_json::from_str(config_json) {
         Ok(config) => config,
         Err(e) => {
             let result = BufferResult {
-                wkt: String::new(),
+                geojson: String::new(),
                 error: Some(format!("Invalid config JSON: {}", e)),
             };
             return serde_json::to_string(&result).unwrap();
         }
     };
 
-    let geometry: Geometry<f64> = match Geometry::try_from_wkt_str(wkt_input) {
+    let geojson: GeoJson = match geojson_input.parse() {
+        Ok(geojson) => geojson,
+        Err(e) => {
+            let result = BufferResult {
+                geojson: String::new(),
+                error: Some(format!("Invalid GeoJSON: {}", e)),
+            };
+            return serde_json::to_string(&result).unwrap();
+        }
+    };
+
+    let geometry: Geometry<f64> = match geojson.try_into() {
         Ok(geom) => geom,
         Err(e) => {
             let result = BufferResult {
-                wkt: String::new(),
-                error: Some(format!("Invalid WKT: {}", e)),
+                geojson: String::new(),
+                error: Some(format!("Cannot convert GeoJSON to geometry: {}", e)),
             };
             return serde_json::to_string(&result).unwrap();
         }
@@ -83,26 +100,42 @@ pub fn buffer_geometry(wkt_input: &str, config_json: &str) -> String {
         .line_join(line_join);
 
     let buffered = geometry.buffer_with_style(style);
+    
+    let buffered_geojson = match GeoJson::try_from(&buffered) {
+        Ok(geojson) => geojson.to_string(),
+        Err(e) => {
+            let result = BufferResult {
+                geojson: String::new(),
+                error: Some(format!("Cannot convert buffered geometry to GeoJSON: {}", e)),
+            };
+            return serde_json::to_string(&result).unwrap();
+        }
+    };
+    
     let result = BufferResult {
-        wkt: buffered.wkt_string(),
+        geojson: buffered_geojson,
         error: None,
     };
     serde_json::to_string(&result).unwrap()
 }
 
 #[wasm_bindgen]
-pub fn validate_wkt(wkt_input: &str) -> String {
-    match Geometry::<f64>::try_from_wkt_str(wkt_input) {
-        Ok(_) => "valid".to_string(),
-        Err(e) => format!("error: {}", e),
+pub fn validate_geojson(geojson_input: &str) -> Result<()> {
+    match GeoJson::from_str(geojson_input) {
+        Ok(_geojson) => Ok(()),
+        Err(e) => Err(format!("error: {}", e))?
     }
 }
 
 #[wasm_bindgen]
-pub fn get_geometry_info(wkt_input: &str) -> String {
-    let geometry: Geometry<f64> = match Geometry::try_from_wkt_str(wkt_input) {
+pub fn get_geometry_info(geojson_input: &str) -> Result<String> {
+    let geojson = GeoJson::from_str(geojson_input).map_err(|e| {
+        format!("error: {}", e)
+    })?;
+
+    let geometry: Geometry<f64> = match geojson.try_into() {
         Ok(geom) => geom,
-        Err(e) => return format!("error: {}", e),
+        Err(e) => Err(format!("error: {}", e))?
     };
 
     let info = match &geometry {
@@ -118,5 +151,5 @@ pub fn get_geometry_info(wkt_input: &str) -> String {
         Geometry::Triangle(_) => "Triangle",
     };
 
-    format!("type: {}", info)
+    Ok(format!("type: {}", info))
 }

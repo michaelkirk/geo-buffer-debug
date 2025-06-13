@@ -1,6 +1,6 @@
 import './style.css'
 import * as L from 'leaflet'
-import init, { buffer_geometry, validate_wkt, get_geometry_info } from '../pkg/geo_buffer_wasm.js'
+import init, { buffer_geometry, validate_geojson, get_geometry_info } from '../pkg/geo_buffer_wasm.js'
 
 interface BufferConfig {
   distance: number
@@ -10,7 +10,7 @@ interface BufferConfig {
 }
 
 interface BufferResult {
-  wkt: string
+  geojson: string
   error?: string
 }
 
@@ -45,7 +45,7 @@ class GeoBufferDebugger {
   }
 
   private setupEventListeners() {
-    const wktInput = document.getElementById('wkt-input') as HTMLTextAreaElement
+    const geojsonInput = document.getElementById('geojson-input') as HTMLTextAreaElement
     const distanceInput = document.getElementById('distance') as HTMLInputElement
     const lineCapSelect = document.getElementById('line-cap') as HTMLSelectElement
     const lineJoinSelect = document.getElementById('line-join') as HTMLSelectElement
@@ -62,9 +62,9 @@ class GeoBufferDebugger {
       }
     })
 
-    // Validate WKT input on change
-    wktInput.addEventListener('input', () => {
-      this.validateWktInput(wktInput.value)
+    // Validate GeoJSON input on change
+    geojsonInput.addEventListener('input', () => {
+      this.validateGeojsonInput(geojsonInput.value)
     })
 
     // Apply buffer operation
@@ -81,18 +81,21 @@ class GeoBufferDebugger {
         miter_limit: lineJoinSelect.value === 'miter' ? parseFloat(miterLimitInput.value) : undefined
       }
 
-      this.applyBuffer(wktInput.value, config)
+      this.applyBuffer(geojsonInput.value, config)
     })
 
     // Set initial example
-    wktInput.value = 'POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))'
-    this.validateWktInput(wktInput.value)
+    geojsonInput.value = JSON.stringify({
+      "type": "Polygon",
+      "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]
+    }, null, 2)
+    this.validateGeojsonInput(geojsonInput.value)
   }
 
-  private validateWktInput(wkt: string) {
-    const validationDiv = document.getElementById('wkt-validation')!
+  private validateGeojsonInput(geojson: string) {
+    const validationDiv = document.getElementById('geojson-validation')!
     
-    if (!wkt.trim()) {
+    if (!geojson.trim()) {
       validationDiv.style.display = 'none'
       return
     }
@@ -103,24 +106,23 @@ class GeoBufferDebugger {
       return
     }
 
-    const result = validate_wkt(wkt.trim())
-    
-    if (result === 'valid') {
-      const info = get_geometry_info(wkt.trim())
-      validationDiv.textContent = `✓ Valid WKT - ${info}`
+    try {
+      const result = validate_geojson(geojson.trim())
+      const info = get_geometry_info(geojson.trim())
+      validationDiv.textContent = `✓ Valid GeoJSON - ${info}`
       validationDiv.className = 'validation-message valid'
-      this.displayOriginalGeometry(wkt.trim())
-    } else {
-      validationDiv.textContent = `✗ ${result}`
+      this.displayOriginalGeometry(geojson.trim())
+    } catch (error) {
+      validationDiv.textContent = `✗ ${error}`
       validationDiv.className = 'validation-message invalid'
       this.clearOriginalGeometry()
     }
   }
 
-  private applyBuffer(wkt: string, config: BufferConfig) {
+  private applyBuffer(geojson: string, config: BufferConfig) {
     try {
       const configJson = JSON.stringify(config)
-      const resultJson = buffer_geometry(wkt.trim(), configJson)
+      const resultJson = buffer_geometry(geojson.trim(), configJson)
       const result: BufferResult = JSON.parse(resultJson)
 
       if (result.error) {
@@ -128,8 +130,8 @@ class GeoBufferDebugger {
         return
       }
 
-      this.displayResult(result.wkt)
-      this.displayBufferedGeometry(result.wkt)
+      this.displayResult(result.geojson)
+      this.displayBufferedGeometry(result.geojson)
       this.hideError()
 
     } catch (error) {
@@ -137,15 +139,16 @@ class GeoBufferDebugger {
     }
   }
 
-  private displayOriginalGeometry(wkt: string) {
+  private displayOriginalGeometry(geojson: string) {
+    console.log('Displaying original geometry:', geojson);
     try {
-      const geojson = this.wktToGeoJSON(wkt)
+      const geojsonObj = JSON.parse(geojson)
       
       if (this.originalLayer) {
         this.map.removeLayer(this.originalLayer)
       }
 
-      this.originalLayer = L.geoJSON(geojson, {
+      this.originalLayer = L.geoJSON(geojsonObj, {
         style: {
           color: '#e74c3c',
           weight: 2,
@@ -159,15 +162,15 @@ class GeoBufferDebugger {
     }
   }
 
-  private displayBufferedGeometry(wkt: string) {
+  private displayBufferedGeometry(geojson: string) {
     try {
-      const geojson = this.wktToGeoJSON(wkt)
+      const geojsonObj = JSON.parse(geojson)
       
       if (this.bufferedLayer) {
         this.map.removeLayer(this.bufferedLayer)
       }
 
-      this.bufferedLayer = L.geoJSON(geojson, {
+      this.bufferedLayer = L.geoJSON(geojsonObj, {
         style: {
           color: '#3498db',
           weight: 2,
@@ -184,15 +187,21 @@ class GeoBufferDebugger {
   }
 
   private clearOriginalGeometry() {
+    console.log('Clearing original geometry');
     if (this.originalLayer) {
       this.map.removeLayer(this.originalLayer)
       this.originalLayer = null
     }
   }
 
-  private displayResult(wkt: string) {
-    const resultTextarea = document.getElementById('result-wkt') as HTMLTextAreaElement
-    resultTextarea.value = wkt
+  private displayResult(geojson: string) {
+    const resultTextarea = document.getElementById('result-geojson') as HTMLTextAreaElement
+    try {
+      const formatted = JSON.stringify(JSON.parse(geojson), null, 2)
+      resultTextarea.value = formatted
+    } catch {
+      resultTextarea.value = geojson
+    }
   }
 
   private showError(message: string) {
@@ -206,138 +215,6 @@ class GeoBufferDebugger {
     errorDiv.style.display = 'none'
   }
 
-  // Simple WKT to GeoJSON converter for basic geometries
-  private wktToGeoJSON(wkt: string): any {
-    const trimmed = wkt.trim().toUpperCase()
-    
-    if (trimmed.startsWith('POINT')) {
-      const coords = this.extractCoordinates(trimmed, 'POINT')
-      return {
-        type: 'Point',
-        coordinates: coords[0]
-      }
-    }
-    
-    if (trimmed.startsWith('LINESTRING')) {
-      const coords = this.extractCoordinates(trimmed, 'LINESTRING')
-      return {
-        type: 'LineString',
-        coordinates: coords
-      }
-    }
-    
-    if (trimmed.startsWith('POLYGON')) {
-      const coords = this.extractPolygonCoordinates(trimmed)
-      return {
-        type: 'Polygon',
-        coordinates: coords
-      }
-    }
-    
-    if (trimmed.startsWith('MULTIPOLYGON')) {
-      const coords = this.extractMultiPolygonCoordinates(trimmed)
-      return {
-        type: 'MultiPolygon',
-        coordinates: coords
-      }
-    }
-    
-    throw new Error(`Unsupported geometry type: ${trimmed.split('(')[0]}`)
-  }
-
-  private extractCoordinates(wkt: string, geomType: string): number[][] {
-    const coordsString = wkt.substring(geomType.length).trim()
-    const cleaned = coordsString.slice(1, -1) // Remove outer parentheses
-    
-    return cleaned.split(',').map(pair => {
-      const [x, y] = pair.trim().split(/\s+/)
-      return [parseFloat(x), parseFloat(y)]
-    })
-  }
-
-  private extractPolygonCoordinates(wkt: string): number[][][] {
-    const coordsString = wkt.substring('POLYGON'.length).trim()
-    const rings = this.parseRings(coordsString)
-    
-    return rings.map(ring => {
-      return ring.split(',').map(pair => {
-        const [x, y] = pair.trim().split(/\s+/)
-        return [parseFloat(x), parseFloat(y)]
-      })
-    })
-  }
-
-  private extractMultiPolygonCoordinates(wkt: string): number[][][][] {
-    const coordsString = wkt.substring('MULTIPOLYGON'.length).trim()
-    const polygons = this.parsePolygons(coordsString)
-    
-    return polygons.map(polygon => {
-      const rings = this.parseRings(polygon)
-      return rings.map(ring => {
-        return ring.split(',').map(pair => {
-          const [x, y] = pair.trim().split(/\s+/)
-          return [parseFloat(x), parseFloat(y)]
-        })
-      })
-    })
-  }
-
-  private parseRings(coordsString: string): string[] {
-    let depth = 0
-    let current = ''
-    const rings: string[] = []
-    
-    for (let i = 1; i < coordsString.length - 1; i++) {
-      const char = coordsString[i]
-      
-      if (char === '(') {
-        depth++
-        if (depth === 1) continue
-      } else if (char === ')') {
-        depth--
-        if (depth === 0) {
-          rings.push(current.trim())
-          current = ''
-          continue
-        }
-      }
-      
-      if (depth > 0) {
-        current += char
-      }
-    }
-    
-    return rings
-  }
-
-  private parsePolygons(coordsString: string): string[] {
-    let depth = 0
-    let current = ''
-    const polygons: string[] = []
-    
-    for (let i = 1; i < coordsString.length - 1; i++) {
-      const char = coordsString[i]
-      
-      if (char === '(') {
-        depth++
-      } else if (char === ')') {
-        depth--
-      }
-      
-      current += char
-      
-      if (depth === 0 && char === ')') {
-        polygons.push(current.trim())
-        current = ''
-        // Skip comma and whitespace
-        while (i + 1 < coordsString.length - 1 && /[,\s]/.test(coordsString[i + 1])) {
-          i++
-        }
-      }
-    }
-    
-    return polygons
-  }
 }
 
 // Initialize the application when DOM is loaded

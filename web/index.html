@@ -18,9 +18,9 @@
         <div class="controls-panel">
           <section class="input-section">
             <h2>Input Geometry</h2>
-            <label for="wkt-input">WKT Input:</label>
-            <textarea id="wkt-input" rows="4" placeholder="Enter WKT geometry (e.g., POINT(0 0) or POLYGON((0 0, 1 0, 1 1, 0 1, 0 0)))"></textarea>
-            <div id="wkt-validation" class="validation-message"></div>
+            <label for="geojson-input">GeoJSON Input:</label>
+            <textarea id="geojson-input" rows="6" placeholder='Enter GeoJSON geometry (e.g., {"type": "Point", "coordinates": [0, 0]})'></textarea>
+            <div id="geojson-validation" class="validation-message"></div>
           </section>
 
           <section class="buffer-config">
@@ -60,7 +60,7 @@
           <section class="output-section">
             <h2>Output</h2>
             <div id="buffer-result">
-              <textarea id="result-wkt" rows="6" readonly placeholder="Buffered geometry WKT will appear here"></textarea>
+              <textarea id="result-geojson" rows="8" readonly placeholder="Buffered geometry GeoJSON will appear here"></textarea>
             </div>
             <div id="error-message" class="error-message" style="display: none;"></div>
           </section>
