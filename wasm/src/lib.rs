@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 use geo::{Buffer, Geometry};
 use geo::algorithm::buffer::{BufferStyle, LineCap, LineJoin};
-use wkt::TryFromWkt;
+use wkt::{ToWkt, TryFromWkt};
 use serde::{Deserialize, Serialize};
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -82,15 +82,12 @@ pub fn buffer_geometry(wkt_input: &str, config_json: &str) -> String {
         .line_cap(line_cap)
         .line_join(line_join);
 
-    match geometry.buffer_with_style(style) {
-        buffered => {
-            let result = BufferResult {
-                wkt: format!("{}", wkt::Wkt::from(&buffered)),
-                error: None,
-            };
-            serde_json::to_string(&result).unwrap()
-        }
-    }
+    let buffered = geometry.buffer_with_style(style);
+    let result = BufferResult {
+        wkt: buffered.wkt_string(),
+        error: None,
+    };
+    serde_json::to_string(&result).unwrap()
 }
 
 #[wasm_bindgen]
