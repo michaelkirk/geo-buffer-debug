@@ -17,5 +17,5 @@ console_error_panic_hook = "0.1.7"
 anyhow = "1.0.98"
 
 [patch.crates-io]
-geo = { path = "../../geo/geo" }
-geo-types = { path = "../../geo/geo-types" }
+geo = { git = "https://github.com/georust/geo", branch = "mkirk/geo-buffer" }
+# geo = { path = "../../geo/geo" }
